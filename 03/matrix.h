@@ -94,7 +94,7 @@ public:
         {
             for (int j = 0; j < cols; j++)
             {
-                data[i][j] *= a;
+                (*this)[i][j] *= a;
             }
         }
     }
@@ -113,7 +113,7 @@ public:
         {
             for (int j = 0; j < cols; j++)
             {
-                if (data[i][j] != M[i][j])
+                if ((*this)[i][j] != M[i][j])
                 {
                     return false;
                 }
@@ -124,25 +124,7 @@ public:
 
     bool operator!= (Matrix M)
     {
-        if (cols != M.getColumns())
-        {
-            return true;
-        }
-        if (rows != M.getRows())
-        {
-            return true;
-        }
-        for (int i = 0; i < rows; i++)
-        {
-            for (int j = 0; j < cols; j++)
-            {
-                if (data[i][j] != M[i][j])
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return (*(this) != M);
     }
 };
 
