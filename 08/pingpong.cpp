@@ -3,57 +3,44 @@
 #include <mutex>
 #include <condition_variable>
 
-class Semaphore
-{
-    std::mutex mutex_;
-    std::condition_variable condition_;
-    int counter_;
-public:
-    explicit Semaphore(int initialValue = 1)
-    : counter_(initialValue)
-    {
-    }
-    
-    void enter()
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        condition_.wait(lock,
-                        [this]()
-                        {
-                            return counter_ > 0;
-                        });
-        --counter_;
-    }
-    
-    void leave()
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        ++counter_;
-        condition_.notify_one();
-    }
-};
+#define A 500000
 
-Semaphore pingsem; 
-Semaphore pongsem;
+std::mutex mut;
+bool ping_ = true;
 
 void pingfunc()
 {
-    pongsem.enter();
-    for(int i = 0; i < 500000; i++)
+    for (int i = 0; i < A; i++)
     {
-        pingsem.enter();
-        std::cout << "ping \n";
-        pongsem.leave();
+        mut.lock();
+        if (ping_)
+        {
+            std::cout << "ping\n";
+            ping_ = false;
+        }
+        else
+        {
+            i--;
+        }
+        mut.unlock();
     }
 }
 
 void pongfunc()
 {
-    for(int i = 0; i < 500000; i++)
+    for (int i = 0; i < A; i++)
     {
-        pongsem.enter();
-        std::cout << "pong \n";
-        pingsem.leave();
+        mut.lock();
+        if (!ping_)
+        {
+            std::cout << "ping\n";
+            ping_ = true;
+        }
+        else
+        {
+            i--;
+        }
+        mut.unlock();
     }
 }
 
