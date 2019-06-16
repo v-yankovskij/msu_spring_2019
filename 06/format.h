@@ -11,36 +11,23 @@
 #include <memory>
 #include <any>
 
-struct streamable_any : std::any {
-    void(*streamer)(std::ostream&, streamable_any const&) = nullptr;
-    friend std::ostream& operator<<( std::ostream& os, streamable_any const& a )
-    {
-        a.streamer( os, a );
-        return os;
-    }
-    
-    template<class T, std::enable_if_t<!std::is_same<std::decay_t<T>, streamable_any>{}, bool> = true>
-    streamable_any( T&& t ):
-    std::any (std::forward<T>(t) ), streamer([](std::ostream& os, streamable_any const& self ){os << std::any_cast<std::decay_t<T>>(self);})
-    {}
-};
-
-std::vector<streamable_any> vargs;
-
-template <typename... ArgTypes> void to_vector(ArgTypes... Args);
-template <typename T, typename... ArgTypes> void to_vector(T t, ArgTypes... Args)
+template <typename... ArgTypes> void to_vector(std::vector<std::string>& vargs, ArgTypes... Args);
+template <typename T, typename... ArgTypes> void to_vector(std::vector<std::string>& vargs, T t, ArgTypes... Args)
 {
-    vargs.push_back(t);
-    to_vector(Args...);
+    std::ostringstream os;
+    os << t;
+    vargs.push_back(os.str());
+    to_vector(vargs, Args...);
 }
-template <> void to_vector() {}
+template <> void to_vector(std::vector<std::string>& vargs) {}
 
-template <typename... ArgTypes> std::string format(std::string s, ArgTypes... Args)
+template <typename... ArgTypes> std::string format_(std::string s, ArgTypes... Args)
 {
     char c;
     std::ostringstream res;
+    std::vector<std::string> vargs;
     vargs.clear();
-    to_vector(Args...);
+    to_vector(vargs, Args...);
     for (int i = 0; i < s.length(); i++)
     {
         if (s[i] == '{')
@@ -56,7 +43,7 @@ template <typename... ArgTypes> std::string format(std::string s, ArgTypes... Ar
             if ((i == s.length())||(s[i] != '}')||(num >= vargs.size()))
             {
                 vargs.clear();
-                throw std::runtime_error("a");
+                throw std::runtime_error("");
             }
             else
             {
@@ -67,7 +54,7 @@ template <typename... ArgTypes> std::string format(std::string s, ArgTypes... Ar
         {
             if (s[i] == '}')
             {
-                throw std::runtime_error("b");
+                throw std::runtime_error("");
             }
             else
             {
@@ -77,6 +64,12 @@ template <typename... ArgTypes> std::string format(std::string s, ArgTypes... Ar
     }
     vargs.clear();
     return res.str();
+}
+
+
+template <typename... ArgTypes> std::string format(std::string&& s, ArgTypes&&... Args)
+{
+    return format_(std::forward<std::string>(s), std::forward<ArgTypes>(Args)...);
 }
 
 
