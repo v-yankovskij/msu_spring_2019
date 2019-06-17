@@ -8,22 +8,58 @@
 #include <string>
 #include <algorithm>
 
-std::atomic<bool> finished(false);
-std::atomic<int> finished_step(0);
-std::atomic<int> finished_sort(0);
-std::condition_variable condition;
-std::mutex sort_finish_mutex;
-std::mutex iter_finish_mutex;
-std::mutex stream_read_mutex;
-std::mutex output_queue_mutex;
+#define M 6291456
+#define N 2
+#define m M/N
 
-void split(uint64_t * numbers, std::ifstream & datas, int id, std::queue<std::string>& output_queue)
+class uint_seq
+{
+public:
+    size_t size;
+    uint64_t* numbers;
+
+    uint_seq (size_t n)
+    {
+        numbers = new uint64_t [n];
+    }
+
+    const uint64_t& operator[](size_t i) const
+    {
+        if ((i >= 0) && (i < size))
+        {
+            return numbers[i];
+        }
+        else
+        {
+            throw std::out_of_range("");
+        }
+    }
+
+    uint64_t& operator[](size_t i)
+    {
+        if ((i >= 0) && (i < size))
+        {
+            return numbers[i];
+        }
+        else
+        {
+            throw std::out_of_range("");
+        }
+    }
+
+    ~uint_seq()
+    {
+        delete[] numbers;
+    }
+};
+
+void split(uint64_t * numbers, std::ifstream& datas, int id, std::queue<std::string>& output_queue, std::mutex& stream_read_mutex)
 {
     int snum = 0;
     while (!datas.eof())
     {
         std::unique_lock<std::mutex> lock(stream_read_mutex);
-        datas.read(reinterpret_cast<char *>(numbers), 3145728);
+        datas.read(reinterpret_cast<char *>(numbers), m);
         std::streamsize current_size = datas.gcount() / sizeof(uint64_t);
         lock.unlock();
         if (current_size != 0)
@@ -36,21 +72,20 @@ void split(uint64_t * numbers, std::ifstream & datas, int id, std::queue<std::st
             snum++;
         }
     }
-    
 }
 
-void merge(std::string& string1, std::string& string2, uint64_t* num, int id, int i, int snum, std::queue<std::string>&output_queue)
+void merge(std::string& string1, std::string& string2, uint64_t* numbers, int id, int i, int snum, std::queue<std::string>&output_queue, std::mutex& output_queue_mutex)
 {
     std::ifstream stream1(string1, std::ios::binary);
     std::ifstream stream2(string2, std::ios::binary);
     std::string name = std::to_string(i) + '.' + std::to_string(id) + '.' + std::to_string(snum) + ".bin";
     std::ofstream output_stream(name, std::ios::binary);
-    uint64_t* left = num;
-    uint64_t* right = num + 786432;
-    uint64_t* centre = centre + 786432;
-    stream1.read(reinterpret_cast<char*>(left), 786432 * sizeof(uint64_t));
+    uint64_t* left = numbers;
+    uint64_t* right = numbers + (m/(4*sizeof(uint64_t)));
+    uint64_t* centre = centre + (m/(4*sizeof(uint64_t)));
+    stream1.read(reinterpret_cast<char*>(left), m/4);
     size_t read_left = stream1.gcount() / sizeof(uint64_t);
-    stream2.read(reinterpret_cast<char*>(right), 786432 * sizeof(uint64_t));
+    stream2.read(reinterpret_cast<char*>(right), m/4);
     size_t read_right = stream2.gcount() / sizeof(uint64_t);
     size_t l = 0;
     size_t c = 0;
@@ -59,17 +94,17 @@ void merge(std::string& string1, std::string& string2, uint64_t* num, int id, in
     {
         if ((l == read_left) && !stream1.eof())
         {
-            stream1.read(reinterpret_cast<char*>(left), 786432 * sizeof(uint64_t));
+            stream1.read(reinterpret_cast<char*>(left), m/4);
             read_left = stream1.gcount() / sizeof(uint64_t);
             l = 0;
         }
         if ((r == read_right) && !stream2.eof())
         {
-            stream2.read(reinterpret_cast<char*>(right), 786432 * sizeof(uint64_t));
+            stream2.read(reinterpret_cast<char*>(right), m/4);
             read_right = stream2.gcount() / sizeof(uint64_t);
             c = 0;
         }
-        if (c == 1572864)
+        if (c == m/(2*sizeof(uint64_t)))
         {
             output_stream.write(reinterpret_cast<char*>(centre), c * sizeof(uint64_t));
             c = 0;
@@ -113,12 +148,12 @@ void merge(std::string& string1, std::string& string2, uint64_t* num, int id, in
     output_queue.push(name);
 }
 
-void Sort(uint64_t * nums, std::ifstream & datas, int id, std::queue<std::string>& output_queue)
+void Sort(uint_seq& nums, std::ifstream & datas, int id, std::queue<std::string>& output_queue, std::atomic<bool>& finished, std::atomic<int>& finished_step, std::atomic<int>& finished_sort, std::condition_variable& condition, std::mutex& sort_finish_mutex, std::mutex& iter_finish_mutex, std::mutex& stream_read_mutex, std::mutex& output_queue_mutex)
 {
-    uint64_t * numbers = nums + id * 3145728 / sizeof(uint64_t);
+    uint64_t * numb = nums.numbers + id * m / sizeof(uint64_t);
     int i = 0;
     int snum = 0;
-    split(numbers, datas, id, output_queue);
+    split(numb, datas, id, output_queue, stream_read_mutex);
     i++;
     std::unique_lock<std::mutex> lock(iter_finish_mutex);
     finished_step++;
@@ -136,12 +171,12 @@ void Sort(uint64_t * nums, std::ifstream & datas, int id, std::queue<std::string
         std::string tmp2 = output_queue.front();
         output_queue.pop();
         qLock.unlock();
-        merge(tmp1, tmp2, numbers, id, i, snum, output_queue);
+        merge(tmp1, tmp2, numb, id, i, snum, output_queue, output_queue_mutex);
         snum++;
     }
     std::unique_lock<std::mutex> fLock(sort_finish_mutex);
     finished_sort++;
-    if (finished_sort == 2)
+    if (finished_sort == N)
     {
         if (output_queue.empty())
         {
@@ -156,7 +191,15 @@ void Sort(uint64_t * nums, std::ifstream & datas, int id, std::queue<std::string
 
 int main()
 {
-    uint64_t * nums = new uint64_t [6291456 / sizeof(uint64_t)];
+    std::atomic<bool> finished(false);
+    std::atomic<int> finished_step(0);
+    std::atomic<int> finished_sort(0);
+    std::condition_variable condition;
+    std::mutex sort_finish_mutex;
+    std::mutex iter_finish_mutex;
+    std::mutex stream_read_mutex;
+    std::mutex output_queue_mutex;
+    uint_seq nums(M / sizeof(uint64_t));
     std::ifstream datas("data.bin", std::ios::binary);
     std::queue<std::string> output_queue;
     std::vector<std::thread> threads;
@@ -164,11 +207,14 @@ int main()
     {
         throw std::invalid_argument("can't open file");
     }
-    threads.emplace_back(Sort, std::ref(nums),std::ref(datas), 0, std::ref(output_queue));
-    threads.emplace_back(Sort, std::ref(nums),std::ref(datas), 1, std::ref(output_queue));
-    threads[0].join();
-    threads[1].join();
-    delete[] nums;
+    for (int i = 0; i < N; i++)
+    {
+        threads.emplace_back(Sort, std::ref(nums),std::ref(datas), i, std::ref(output_queue), std::ref(finished), std::ref(finished_step), std::ref(finished_sort), std::ref(condition), std::ref(sort_finish_mutex), std::ref(iter_finish_mutex), std::ref(stream_read_mutex), std::ref(output_queue_mutex));
+    }
+    for (int i = 0; i < N; i++)
+    {
+        threads[i].join();
+    }
     system("pause");
     return 0;
 }
