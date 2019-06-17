@@ -2,13 +2,11 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <vector>
 
 #define A 500000
 
-std::mutex mut;
-bool ping_ = true;
-
-void pingfunc()
+void pingfunc(bool& ping_, std::mutex& mut)
 {
     for (int i = 0; i < A; i++)
     {
@@ -26,7 +24,7 @@ void pingfunc()
     }
 }
 
-void pongfunc()
+void pongfunc(bool& ping_, std::mutex& mut)
 {
     for (int i = 0; i < A; i++)
     {
@@ -46,8 +44,11 @@ void pongfunc()
 
 int main()
 {
-    std::thread pingthread(pingfunc);
-    std::thread pongthread(pongfunc);
-    pingthread.join();
-    pongthread.join();
+    std::mutex mut;
+    bool ping_ = true;
+    std::vector<std::thread> threads;
+    threads.emplace_back(pingfunc, std::ref(ping_), std::ref(mut));
+    threads.emplace_back(pongfunc, std::ref(ping_), std::ref(mut));
+    threads[0].join();
+    threads[1].join();
 }
