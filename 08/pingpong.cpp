@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <vector>
 
-#define A 500000
+const int A = 500000;
 
 void pingfunc(bool& ping_, std::mutex& mut)
 {
